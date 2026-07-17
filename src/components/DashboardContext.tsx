@@ -1,0 +1,132 @@
+'use client'
+
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react'
+import { createClient } from '@/utils/supabase/client'
+import { useRouter } from 'next/navigation'
+
+interface Profile {
+  id: string
+  monthly_income: number
+  is_irregular_income: boolean
+  base_currency: string
+  has_completed_onboarding: boolean
+}
+
+interface Category {
+  id: string
+  name: string
+  icon: string
+}
+
+interface DashboardContextType {
+  profile: Profile | null
+  categories: Category[]
+  loading: boolean
+  isTransactionModalOpen: boolean
+  setTransactionModalOpen: (open: boolean) => void
+  refreshData: () => Promise<void>
+  formatCurrency: (amount: number) => string
+  logOut: () => Promise<void>
+}
+
+const DashboardContext = createContext<DashboardContextType | undefined>(undefined)
+
+export function DashboardProvider({ children }: { children: ReactNode }) {
+  const router = useRouter()
+  const supabase = createClient()
+
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [categories, setCategories] = useState<Category[]>([])
+  const [loading, setLoading] = useState(true)
+  const [isTransactionModalOpen, setTransactionModalOpen] = useState(false)
+
+  const loadData = useCallback(async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (!user) {
+        router.push('/login')
+        return
+      }
+
+      // Fetch Profile
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+
+      if (profileError || !profileData) {
+        router.push('/onboarding')
+        return
+      }
+
+      setProfile(profileData)
+
+      // Fetch Categories
+      const { data: categoryData, error: categoryError } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('profile_id', user.id)
+        .order('name', { ascending: true })
+
+      if (!categoryError) {
+        setCategories(categoryData || [])
+      }
+    } catch (err) {
+      console.error('Error loading dashboard context:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [supabase, router])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadData()
+  }, [loadData])
+
+  const refreshData = async () => {
+    await loadData()
+  }
+
+  const formatCurrency = (amount: number) => {
+    const currency = profile?.base_currency || 'INR'
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: currency,
+      minimumFractionDigits: 2,
+    }).format(amount)
+  }
+
+  const logOut = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
+
+  return (
+    <DashboardContext.Provider
+      value={{
+        profile,
+        categories,
+        loading,
+        isTransactionModalOpen,
+        setTransactionModalOpen,
+        refreshData,
+        formatCurrency,
+        logOut,
+      }}
+    >
+      {children}
+    </DashboardContext.Provider>
+  )
+}
+
+export function useDashboard() {
+  const context = useContext(DashboardContext)
+  if (context === undefined) {
+    throw new Error('useDashboard must be used within a DashboardProvider')
+  }
+  return context
+}
