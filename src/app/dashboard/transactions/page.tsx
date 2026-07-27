@@ -11,6 +11,7 @@ import {
   PlusCircle,
   AlertCircle,
   Check,
+  Download,
 } from 'lucide-react'
 
 interface Transaction {
@@ -179,6 +180,37 @@ export default function TransactionsPage() {
     setMaxAmount('')
   }
 
+  const exportToCSV = () => {
+    if (filteredTransactions.length === 0) {
+      alert('No transactions to export.')
+      return
+    }
+
+    const headers = ['Date', 'Type', 'Category', 'Amount', 'Note']
+    const rows = filteredTransactions.map((tx) => [
+      tx.date,
+      tx.type,
+      tx.categories?.name || (tx.type === 'income' ? 'Income' : 'Uncategorized'),
+      tx.amount,
+      tx.note || ''
+    ])
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map((row) => row.map((val) => `"${String(val).replace(/"/g, '""')}"`).join(','))
+    ].join('\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.setAttribute('href', url)
+    link.setAttribute('download', `transactions_export_${new Date().toISOString().split('T')[0]}.csv`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col justify-center items-center h-[50vh] gap-3">
@@ -193,11 +225,20 @@ export default function TransactionsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-neutral-50">Transaction History</h1>
-        <p className="text-xs text-neutral-400">
-          Edit, delete, and audit your academic term expenses.
-        </p>
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-neutral-50">Transaction History</h1>
+          <p className="text-xs text-neutral-400">
+            Edit, delete, and audit your academic term expenses.
+          </p>
+        </div>
+        <button
+          onClick={exportToCSV}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 border border-neutral-900 hover:border-neutral-700 text-xs font-semibold text-neutral-300 transition-all hover:text-neutral-100 w-fit shrink-0"
+        >
+          <Download className="h-4 w-4" />
+          <span>Export CSV</span>
+        </button>
       </div>
 
       {/* Filtering Toolbar */}

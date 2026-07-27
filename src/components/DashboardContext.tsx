@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 
 interface Profile {
   id: string
+  full_name: string | null
   monthly_income: number
   is_irregular_income: boolean
   base_currency: string

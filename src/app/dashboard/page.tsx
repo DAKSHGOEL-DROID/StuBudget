@@ -16,13 +16,14 @@ import {
   PieChart,
   Pie,
   Cell,
-  BarChart,
-  Bar,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   Tooltip,
 } from 'recharts'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
 
 const COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#ec4899', '#64748b']
 
@@ -178,11 +179,32 @@ export default function DashboardPage() {
         setGoals(activeGoals || [])
       }
 
-      // Fetch budgets and calculate overspent categories
+      // Fetch budgets and calculate overspent categories (incorporating rollover)
       const { data: budgets } = await supabase
         .from('budgets')
         .select('*, categories(*)')
         .eq('profile_id', profile.id)
+
+      // Fetch previous month's transaction spent (for rollover calculations)
+      const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0]
+      const endOfPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0]
+
+      const { data: prevTxs, error: prevTxsError } = await supabase
+        .from('transactions')
+        .select('amount, category_id')
+        .eq('profile_id', profile.id)
+        .eq('type', 'expense')
+        .gte('date', startOfPrevMonth)
+        .lte('date', endOfPrevMonth)
+
+      const prevSpentMap: Record<string, number> = {}
+      if (!prevTxsError && prevTxs) {
+        prevTxs.forEach((tx) => {
+          if (tx.category_id) {
+            prevSpentMap[tx.category_id] = (prevSpentMap[tx.category_id] || 0) + Number(tx.amount)
+          }
+        })
+      }
 
       if (budgets && txs) {
         const spentMap: Record<string, number> = {}
@@ -195,7 +217,14 @@ export default function DashboardPage() {
           })
 
         const overspent = budgets
-          .filter((b) => spentMap[b.category_id] > Number(b.amount_limit))
+          .filter((b) => {
+            const baseLimit = Number(b.amount_limit)
+            const isRolloverEnabled = b.is_rollover_enabled ?? true
+            const prevSpent = prevSpentMap[b.category_id] || 0
+            const rollover = (baseLimit > 0 && isRolloverEnabled) ? Math.max(0, baseLimit - prevSpent) : 0
+            const adjustedLimit = baseLimit + rollover
+            return (spentMap[b.category_id] || 0) > adjustedLimit
+          })
           .map((b) => b.categories?.name || 'Unknown')
 
         setOverspentCategories(overspent)
@@ -280,6 +309,19 @@ export default function DashboardPage() {
 
   const topCategory = donutData.length > 0 ? donutData.sort((a, b) => b.value - a.value)[0] : null
 
+  // Daily Safe-to-Spend calculation
+  const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()
+  const daysRemaining = Math.max(1, daysInMonth - new Date().getDate() + 1)
+  const upcomingBillsTotal = upcomingBills
+    .filter((b) => b.type === 'expense')
+    .reduce((sum, b) => sum + Number(b.amount), 0)
+
+  const activeIncomeLimit = profile?.monthly_income || 0
+  const spendablePool = profile?.is_irregular_income
+    ? netSavings
+    : (activeIncomeLimit - totalExpense)
+  const safeToSpend = Math.max(0, (spendablePool - upcomingBillsTotal) / daysRemaining)
+
   if (contextLoading || loading) {
     return (
       <div className="flex flex-col justify-center items-center h-[50vh] gap-3">
@@ -310,6 +352,41 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Safe-to-Spend Banner */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="relative overflow-hidden bg-gradient-to-r from-emerald-950/20 via-[#18181b]/40 to-blue-950/20 border border-neutral-900 rounded-3xl p-6 flex flex-col md:flex-row items-center justify-between gap-4"
+      >
+        <div className="absolute inset-0 bg-grid-white/[0.02] pointer-events-none" />
+        <div className="space-y-1 z-10">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-extrabold text-emerald-400 uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
+              Safe-to-Spend Today
+            </span>
+            <span className="text-[9px] text-neutral-500 font-bold">
+              • {daysRemaining} days left in month
+            </span>
+          </div>
+          <h2 className="text-3xl font-extrabold text-neutral-50">
+            {formatCurrency(safeToSpend)} <span className="text-xs font-semibold text-neutral-400">/ day</span>
+          </h2>
+          <p className="text-[10px] text-neutral-500 leading-normal max-w-[480px]">
+            Based on {profile?.is_irregular_income ? 'Net Savings' : 'Remaining Allowance'} ({formatCurrency(spendablePool)}) minus upcoming bills ({formatCurrency(upcomingBillsTotal)}) distributed over the remaining days of the month.
+          </p>
+        </div>
+        <div className="flex flex-col items-end shrink-0 z-10">
+          <Link
+            href="/dashboard/transactions"
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 border border-neutral-900 hover:border-neutral-700 text-xs font-semibold text-neutral-300 transition-all hover:text-neutral-100"
+          >
+            <span>Log an Expense</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      </motion.div>
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -402,7 +479,7 @@ export default function DashboardPage() {
 
       {/* Main Charts & Widgets Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Trend Bar Chart */}
+        {/* Trend Area Chart */}
         <div className="bg-[#18181b]/20 border border-neutral-900 p-6 rounded-3xl lg:col-span-2 space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-sm font-bold text-neutral-200">Spending Trends</h2>
@@ -415,7 +492,17 @@ export default function DashboardPage() {
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={monthlyTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <AreaChart data={monthlyTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorSpent" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2}/>
+                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
                   <XAxis
                     dataKey="name"
                     stroke="#52525b"
@@ -438,11 +525,10 @@ export default function DashboardPage() {
                       fontSize: '11px',
                       color: '#f4f4f5',
                     }}
-                    cursor={{ fill: 'rgba(255,255,255,0.02)' }}
                   />
-                  <Bar dataKey="Spent" fill="#ef4444" radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="Income" fill="#10b981" radius={[6, 6, 0, 0]} />
-                </BarChart>
+                  <Area type="monotone" dataKey="Spent" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorSpent)" />
+                  <Area type="monotone" dataKey="Income" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorIncome)" />
+                </AreaChart>
               </ResponsiveContainer>
             )}
           </div>

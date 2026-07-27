@@ -9,6 +9,7 @@ interface Budget {
   id: string
   category_id: string
   amount_limit: number
+  is_rollover_enabled: boolean
 }
 
 interface CategorySpent {
@@ -16,7 +17,10 @@ interface CategorySpent {
   name: string
   icon: string
   spent: number
+  baseLimit: number
+  rollover: number
   limit: number
+  isRolloverEnabled: boolean
   budgetId: string | null
 }
 
@@ -27,10 +31,13 @@ export default function BudgetsPage() {
   const [loading, setLoading] = useState(true)
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [spentData, setSpentData] = useState<Record<string, number>>({})
+  const [prevSpentData, setPrevSpentData] = useState<Record<string, number>>({})
   
   // Edit State
   const [editingCategory, setEditingCategory] = useState<CategorySpent | null>(null)
   const [newLimit, setNewLimit] = useState('')
+  const [rolloverEnabled, setRolloverEnabled] = useState(true)
+  const [inspectedCategory, setInspectedCategory] = useState<CategorySpent | null>(null)
   const [editLoading, setEditLoading] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
 
@@ -70,6 +77,28 @@ export default function BudgetsPage() {
         })
         setSpentData(spentMap)
       }
+
+      // 3. Fetch previous month's transaction spent (for rollover calculations)
+      const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0]
+      const endOfPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0]
+
+      const { data: prevTxsData, error: prevTxsError } = await supabase
+        .from('transactions')
+        .select('amount, category_id')
+        .eq('profile_id', profile.id)
+        .eq('type', 'expense')
+        .gte('date', startOfPrevMonth)
+        .lte('date', endOfPrevMonth)
+
+      if (!prevTxsError && prevTxsData) {
+        const prevSpentMap: Record<string, number> = {}
+        prevTxsData.forEach((tx) => {
+          if (tx.category_id) {
+            prevSpentMap[tx.category_id] = (prevSpentMap[tx.category_id] || 0) + Number(tx.amount)
+          }
+        })
+        setPrevSpentData(prevSpentMap)
+      }
     } catch (e) {
       console.error(e)
     } finally {
@@ -84,7 +113,8 @@ export default function BudgetsPage() {
 
   const startEdit = (catSpent: CategorySpent) => {
     setEditingCategory(catSpent)
-    setNewLimit(catSpent.limit > 0 ? String(catSpent.limit) : '')
+    setNewLimit(catSpent.baseLimit > 0 ? String(catSpent.baseLimit) : '')
+    setRolloverEnabled(catSpent.isRolloverEnabled)
     setEditError(null)
   }
 
@@ -105,6 +135,7 @@ export default function BudgetsPage() {
           profile_id: profile.id,
           category_id: editingCategory.categoryId,
           amount_limit: parseFloat(newLimit),
+          is_rollover_enabled: rolloverEnabled,
         },
         { onConflict: 'profile_id,category_id' }
       )
@@ -124,13 +155,22 @@ export default function BudgetsPage() {
   // Compile combined data structure
   const categoryBudgets: CategorySpent[] = categories.map((cat) => {
     const budget = budgets.find((b) => b.category_id === cat.id)
+    const baseLimit = budget ? Number(budget.amount_limit) : 0
+    const isRolloverEnabled = budget ? budget.is_rollover_enabled : true
+    const prevSpent = prevSpentData[cat.id] || 0
+    const rollover = (baseLimit > 0 && isRolloverEnabled) ? Math.max(0, baseLimit - prevSpent) : 0
     const spent = spentData[cat.id] || 0
+    const limit = baseLimit + rollover
+
     return {
       categoryId: cat.id,
       name: cat.name,
       icon: cat.icon,
       spent,
-      limit: budget ? Number(budget.amount_limit) : 0,
+      baseLimit,
+      rollover,
+      limit,
+      isRolloverEnabled,
       budgetId: budget ? budget.id : null,
     }
   })
@@ -195,7 +235,7 @@ export default function BudgetsPage() {
           const hasLimit = item.limit > 0
           const pct = hasLimit ? (item.spent / item.limit) * 100 : 0
           const isOver = pct >= 100
-          const isWarning = pct >= 70 && pct < 100
+          const isWarning = pct >= 80 && pct < 100
 
           return (
             <div
@@ -209,9 +249,26 @@ export default function BudgetsPage() {
                   </span>
                   <div>
                     <h3 className="text-sm font-bold text-neutral-200">{item.name}</h3>
-                    <span className="text-[10px] text-neutral-500 font-medium">
-                      {hasLimit ? `Limit: ${formatCurrency(item.limit)}` : 'No budget set yet'}
-                    </span>
+                    <div className="text-[10px] text-neutral-500 font-medium">
+                      {hasLimit ? (
+                        <div className="space-y-1">
+                          <div className="font-semibold text-neutral-300">
+                            Limit: {formatCurrency(item.limit)}
+                          </div>
+                          {item.rollover > 0 && (
+                            <button
+                              onClick={() => setInspectedCategory(item)}
+                              className="text-[9px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-lg w-fit flex items-center gap-1 hover:bg-emerald-500/20 transition-all cursor-pointer"
+                            >
+                              <span>+{formatCurrency(item.rollover)} rollover added</span>
+                              <AlertCircle className="h-3 w-3 shrink-0" />
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        'No budget set yet'
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -241,13 +298,18 @@ export default function BudgetsPage() {
                       {isOver ? (
                         <span className="text-red-400 font-bold flex items-center gap-1">
                           <ShieldAlert className="h-3.5 w-3.5" />
-                          <span>Overspent</span>
+                          <span>Overspent ({pct.toFixed(0)}%)</span>
+                        </span>
+                      ) : isWarning ? (
+                        <span className="text-amber-400 font-bold flex items-center gap-1">
+                          <AlertCircle className="h-3.5 w-3.5" />
+                          <span>Approaching Limit ({pct.toFixed(0)}%)</span>
                         </span>
                       ) : (
                         <span>Spent: {formatCurrency(item.spent)}</span>
                       )}
                     </div>
-                    <span>{pct.toFixed(0)}% Limit</span>
+                    <span>{formatCurrency(Math.max(0, item.limit - item.spent))} left</span>
                   </div>
                 </div>
               ) : (
@@ -309,6 +371,31 @@ export default function BudgetsPage() {
                 />
               </div>
 
+              {/* Rollover Toggle */}
+              <div className="bg-neutral-950/50 border border-neutral-900/80 p-3 rounded-xl flex items-center justify-between gap-3">
+                <div className="space-y-0.5 text-left">
+                  <span className="text-[10px] font-bold text-neutral-200 block">
+                    Accumulate Rollover
+                  </span>
+                  <span className="text-[9px] text-neutral-500 block leading-normal">
+                    Add unspent surplus from the previous month to this month&apos;s cap.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRolloverEnabled(!rolloverEnabled)}
+                  className={`w-9 h-5 rounded-full transition-all duration-300 relative shrink-0 ${
+                    rolloverEnabled ? 'bg-emerald-500' : 'bg-neutral-800'
+                  }`}
+                >
+                  <div
+                    className={`w-3 h-3 rounded-full bg-neutral-50 absolute top-1 transition-all duration-300 ${
+                      rolloverEnabled ? 'left-5' : 'left-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
               <div className="pt-2">
                 <button
                   type="submit"
@@ -326,6 +413,57 @@ export default function BudgetsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Rollover Math Breakdown Modal */}
+      {inspectedCategory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            onClick={() => setInspectedCategory(null)}
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+          />
+          <div className="bg-[#18181b] border border-neutral-800 rounded-3xl p-6 w-full max-w-sm relative z-10 shadow-2xl space-y-4">
+            <button
+              onClick={() => setInspectedCategory(null)}
+              className="absolute top-5 right-5 text-neutral-400 hover:text-neutral-200"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div>
+              <h3 className="text-sm font-bold text-neutral-100 flex items-center gap-2">
+                <span className="text-lg">{inspectedCategory.icon}</span>
+                <span>Rollover: {inspectedCategory.name}</span>
+              </h3>
+              <p className="text-[10px] text-neutral-400 mt-1">
+                How your monthly budget cap was calculated.
+              </p>
+            </div>
+
+            <div className="space-y-2.5 pt-2 text-xs text-left">
+              <div className="flex justify-between text-neutral-400">
+                <span>Base Budget Cap</span>
+                <span className="font-semibold text-neutral-200">{formatCurrency(inspectedCategory.baseLimit)}</span>
+              </div>
+              <div className="flex justify-between text-neutral-400">
+                <span>Previous Month Spent</span>
+                <span className="font-semibold text-neutral-200">{formatCurrency(prevSpentData[inspectedCategory.categoryId] || 0)}</span>
+              </div>
+              <div className="border-t border-neutral-900 my-2 pt-2 flex justify-between text-emerald-400 font-medium">
+                <span>Surplus Rollover</span>
+                <span>+{formatCurrency(inspectedCategory.rollover)}</span>
+              </div>
+              <div className="border-t border-neutral-800 pt-2.5 flex justify-between text-neutral-100 font-bold text-sm">
+                <span>Total Budget Cap</span>
+                <span>{formatCurrency(inspectedCategory.limit)}</span>
+              </div>
+            </div>
+            
+            <div className="pt-2 text-[9px] text-neutral-500 leading-normal text-left">
+              Surplus is calculated as: max(0, Base Cap - Previous Month Spent). Rollover can be toggled on/off in the settings.
+            </div>
           </div>
         </div>
       )}

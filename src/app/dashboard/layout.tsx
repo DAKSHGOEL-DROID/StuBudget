@@ -13,6 +13,7 @@ import {
   LogOut,
   Plus,
   Wallet,
+  User,
 } from 'lucide-react'
 
 function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
@@ -25,6 +26,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     { name: 'Budgets', path: '/dashboard/budgets', icon: PieChart },
     { name: 'Savings', path: '/dashboard/goals', icon: Target },
     { name: 'Bills', path: '/dashboard/recurring', icon: CalendarRange },
+    { name: 'Profile', path: '/dashboard/profile', icon: User },
   ]
 
   if (loading) {
@@ -119,9 +121,9 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
       {/* 4. Mobile Bottom Nav Bar (Hidden on desktop) */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0f0f12]/95 border-t border-neutral-900 px-4 py-2 backdrop-blur-lg flex items-center justify-between">
-        {/* Render first 2 navigation links */}
+        {/* Render first 3 navigation links */}
         <div className="flex items-center justify-around flex-1">
-          {navItems.slice(0, 2).map((item) => {
+          {navItems.slice(0, 3).map((item) => {
             const isActive = pathname === item.path
             const Icon = item.icon
             return (
@@ -151,7 +153,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
         {/* Render remaining 3 navigation links */}
         <div className="flex items-center justify-around flex-1">
-          {navItems.slice(2).map((item) => {
+          {navItems.slice(3).map((item) => {
             const isActive = pathname === item.path
             const Icon = item.icon
             return (

@@ -33,6 +33,7 @@ export default function OnboardingPage() {
   const [userId, setUserId] = useState<string | null>(null)
 
   // Step 1 States: Currency & Income
+  const [displayName, setDisplayName] = useState('')
   const [currency, setCurrency] = useState('INR')
   const [incomeMode, setIncomeMode] = useState<'fixed' | 'irregular'>('fixed')
   const [monthlyIncome, setMonthlyIncome] = useState('25000')
@@ -59,6 +60,9 @@ export default function OnboardingPage() {
         router.push('/login')
       } else {
         setUserId(user.id)
+        if (user.user_metadata?.full_name) {
+          setDisplayName(user.user_metadata.full_name)
+        }
       }
     }
     fetchUser()
@@ -88,6 +92,7 @@ export default function OnboardingPage() {
       const { error: profileError } = await supabase
         .from('profiles')
         .update({
+          full_name: displayName.trim(),
           monthly_income: incomeMode === 'fixed' ? parseFloat(monthlyIncome) || 0 : 0,
           is_irregular_income: incomeMode === 'irregular',
           base_currency: currency,
@@ -214,6 +219,21 @@ export default function OnboardingPage() {
                   <p className="text-sm text-neutral-400">
                     Let&apos;s set your starting base currency and how you receive funds.
                   </p>
+                </div>
+
+                {/* Display Name Input */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold uppercase text-neutral-500">
+                    Your Name
+                  </label>
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="e.g. Priyansh"
+                    className="w-full bg-[#18181b] border border-neutral-800 rounded-xl px-4 py-3 text-sm text-neutral-200 focus:outline-none focus:border-emerald-500 transition-all"
+                    required
+                  />
                 </div>
 
                 {/* Currencies Grid */}
