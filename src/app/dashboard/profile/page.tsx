@@ -3,16 +3,31 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { useDashboard } from '@/components/DashboardContext'
-import { User, Wallet, Sparkles, Check, AlertCircle, Coins, HeartHandshake, RefreshCw, Plus, Trash2, Tag } from 'lucide-react'
+import { User, Wallet, Sparkles, Check, AlertCircle, Coins, HeartHandshake, RefreshCw, Plus, Trash2, Tag, Camera, X, Globe } from 'lucide-react'
+
+const getEmojiDataUrl = (emoji: string) => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100"><rect width="100" height="100" rx="50" fill="%2318181b" stroke="%2310b981" stroke-width="2"/><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="55">${emoji}</text></svg>`
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+}
+
+const getInitialsDataUrl = (initials: string) => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100"><rect width="100" height="100" rx="50" fill="%23064e3b" stroke="%2310b981" stroke-width="2"/><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="42" font-family="sans-serif" font-weight="bold" fill="%2334d399">${initials}</text></svg>`
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+}
 
 export default function ProfilePage() {
-  const { profile, categories, refreshData, formatCurrency } = useDashboard()
+  const { profile, categories, refreshData, formatCurrency, userAvatar, userEmail } = useDashboard()
   const supabase = createClient()
 
   // User Auth State
-  const [userEmail, setUserEmail] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
-  const [userAvatar, setUserAvatar] = useState<string | null>(null)
+  const [googlePhoto, setGooglePhoto] = useState<string | null>(null)
+
+  // Avatar Modal States
+  const [isAvatarModalOpen, setAvatarModalOpen] = useState(false)
+  const [customAvatarUrl, setCustomAvatarUrl] = useState('')
+  const [avatarSaveLoading, setAvatarSaveLoading] = useState(false)
+  const [avatarError, setAvatarError] = useState<string | null>(null)
 
   // Category Manager States
   const [newCategoryName, setNewCategoryName] = useState('')
@@ -36,9 +51,8 @@ export default function ProfilePage() {
     async function loadUserInfo() {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        setUserEmail(user.email || null)
         setUserName(user.user_metadata?.full_name || 'Budget Creator')
-        setUserAvatar(user.user_metadata?.avatar_url || null)
+        setGooglePhoto(user.user_metadata?.picture || null)
       }
     }
     void loadUserInfo()
@@ -135,6 +149,33 @@ export default function ProfilePage() {
     }
   }
 
+  const handleSaveAvatar = async (url: string) => {
+    if (!url.trim()) return
+
+    setAvatarSaveLoading(true)
+    setAvatarError(null)
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: { avatar_url: url.trim() },
+      })
+
+      if (error) throw error
+
+      await refreshData()
+      setAvatarModalOpen(false)
+    } catch (err: unknown) {
+      setAvatarError((err as Error).message || 'Failed to update avatar')
+    } finally {
+      setAvatarSaveLoading(false)
+    }
+  }
+
+  const handleCustomAvatarSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    handleSaveAvatar(customAvatarUrl)
+  }
+
   const currencies = [
     { code: 'INR', name: 'Indian Rupee (₹)' },
     { code: 'USD', name: 'US Dollar ($)' },
@@ -158,22 +199,38 @@ export default function ProfilePage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Left Column: Account Info Card */}
         <div className="md:col-span-1 bg-[#18181b]/20 border border-neutral-900 rounded-3xl p-6 flex flex-col items-center justify-center text-center space-y-4">
-          <div className="relative">
-            {userAvatar ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={userAvatar}
-                alt="Profile Avatar"
-                className="w-20 h-20 rounded-full border-2 border-emerald-500/30 object-cover shadow-lg"
-              />
-            ) : (
-              <div className="w-20 h-20 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-400">
-                <User className="h-10 w-10" />
+          <div className="flex flex-col items-center space-y-3">
+            <div
+              className="relative group cursor-pointer select-none"
+              onClick={() => setAvatarModalOpen(true)}
+              title="Change Profile Picture"
+            >
+              {userAvatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={userAvatar}
+                  alt="Profile Avatar"
+                  className="w-20 h-20 rounded-full border-2 border-emerald-500/30 group-hover:border-emerald-500/60 object-cover shadow-lg transition-all"
+                />
+              ) : (
+                <div className="w-20 h-20 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-400 group-hover:border-neutral-700 transition-all">
+                  <User className="h-10 w-10" />
+                </div>
+              )}
+              {/* Hover camera overlay */}
+              <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-neutral-100">
+                <Camera className="h-5 w-5" />
               </div>
-            )}
-            <span className="absolute bottom-0 right-0 p-1.5 rounded-full bg-emerald-500 text-neutral-950 border-2 border-[#09090b]">
-              <Check className="h-3 w-3 font-bold" />
-            </span>
+              <span className="absolute bottom-0 right-0 p-1.5 rounded-full bg-emerald-500 text-neutral-950 border border-[#09090b]">
+                <Camera className="h-3.5 w-3.5 font-bold" />
+              </span>
+            </div>
+            <button
+              onClick={() => setAvatarModalOpen(true)}
+              className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold tracking-wider uppercase border border-emerald-500/10 hover:border-emerald-500/25 bg-emerald-500/5 hover:bg-emerald-500/10 px-3 py-1 rounded-xl transition-all cursor-pointer"
+            >
+              Change Avatar
+            </button>
           </div>
 
           <div>
@@ -444,6 +501,148 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Edit Avatar Modal */}
+      {isAvatarModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fadeIn">
+          <div
+            onClick={() => setAvatarModalOpen(false)}
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+          />
+          
+          <div className="bg-[#18181b] border border-neutral-800 rounded-3xl p-6 w-full max-w-md relative z-10 shadow-2xl space-y-5">
+            <button
+              onClick={() => setAvatarModalOpen(false)}
+              className="absolute top-5 right-5 text-neutral-400 hover:text-neutral-200 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div>
+              <h3 className="text-sm font-bold text-neutral-100 flex items-center gap-2">
+                <Camera className="h-4.5 w-4.5 text-emerald-400" />
+                <span>Customize Profile Picture</span>
+              </h3>
+              <p className="text-[10px] text-neutral-400 mt-1">
+                Choose a pre-designed premium emoji avatar or enter a custom photo URL.
+              </p>
+            </div>
+
+            {avatarError && (
+              <div className="p-3 rounded-xl bg-red-950/20 border border-red-900/50 text-red-400 text-xs flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{avatarError}</span>
+              </div>
+            )}
+
+            {/* Presets Grid */}
+            <div className="space-y-2">
+              <label className="text-[9px] font-bold text-neutral-500 uppercase tracking-wider block">
+                Emoji Presets
+              </label>
+              <div className="grid grid-cols-5 gap-2.5 max-h-[140px] overflow-y-auto pr-1">
+                {[
+                  { emoji: '🎓', label: 'Student' },
+                  { emoji: '💸', label: 'Cash' },
+                  { emoji: '🚀', label: 'Rocket' },
+                  { emoji: '🎮', label: 'Gamer' },
+                  { emoji: '🎧', label: 'Music' },
+                  { emoji: '🍕', label: 'Pizza' },
+                  { emoji: '🦄', label: 'Unicorn' },
+                  { emoji: '☕', label: 'Coffee' },
+                  { emoji: '✈️', label: 'Travel' },
+                  { emoji: '✨', label: 'Sparkles' },
+                ].map((preset) => {
+                  const presetUrl = getEmojiDataUrl(preset.emoji)
+                  const isSelected = userAvatar === presetUrl
+                  return (
+                    <button
+                      key={preset.emoji}
+                      onClick={() => handleSaveAvatar(presetUrl)}
+                      disabled={avatarSaveLoading}
+                      className={`aspect-square flex flex-col items-center justify-center rounded-2xl bg-neutral-950 border transition-all cursor-pointer text-2xl hover:scale-[1.05] hover:bg-neutral-900 hover:border-emerald-500/30 ${
+                        isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-500/5' : 'border-neutral-900'
+                      }`}
+                      title={preset.label}
+                    >
+                      {preset.emoji}
+                    </button>
+                  )
+                })}
+                {/* Initials Preset */}
+                {(() => {
+                  const initials = (profile?.full_name || userName || 'BC')
+                    .split(' ')
+                    .map((n) => n[0])
+                    .join('')
+                    .substring(0, 2)
+                    .toUpperCase()
+                  const initialsUrl = getInitialsDataUrl(initials)
+                  const isSelected = userAvatar === initialsUrl
+                  return (
+                    <button
+                      onClick={() => handleSaveAvatar(initialsUrl)}
+                      disabled={avatarSaveLoading}
+                      className={`aspect-square flex items-center justify-center rounded-2xl bg-neutral-950 border transition-all cursor-pointer font-bold text-sm tracking-wider text-emerald-400 hover:scale-[1.05] hover:bg-neutral-900 hover:border-emerald-500/30 ${
+                        isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-500/5' : 'border-neutral-900'
+                      }`}
+                      title="Name Initials"
+                    >
+                      {initials}
+                    </button>
+                  )
+                })()}
+              </div>
+            </div>
+
+            {/* Custom URL Field */}
+            <form onSubmit={handleCustomAvatarSubmit} className="space-y-2">
+              <label className="text-[9px] font-bold text-neutral-500 uppercase tracking-wider block">
+                Custom Web Image URL
+              </label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="url"
+                    value={customAvatarUrl}
+                    onChange={(e) => setCustomAvatarUrl(e.target.value)}
+                    className="w-full bg-neutral-950 border border-neutral-900 rounded-xl pl-8.5 pr-3 py-2.5 text-xs text-neutral-200 focus:outline-none focus:border-emerald-500"
+                    placeholder="https://images.unsplash.com/photo-..."
+                    required
+                  />
+                  <Globe className="h-3.5 w-3.5 text-neutral-500 absolute left-3 top-3" />
+                </div>
+                <button
+                  type="submit"
+                  disabled={avatarSaveLoading}
+                  className="px-4 py-2.5 rounded-xl bg-neutral-50 hover:bg-neutral-200 text-neutral-950 text-xs font-bold transition-all shrink-0 cursor-pointer"
+                >
+                  Save
+                </button>
+              </div>
+            </form>
+
+            {/* Restore Google Option */}
+            {googlePhoto && userAvatar !== googlePhoto && (
+              <div className="pt-2 border-t border-neutral-900">
+                <button
+                  onClick={() => handleSaveAvatar(googlePhoto)}
+                  disabled={avatarSaveLoading}
+                  className="w-full py-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-900 border border-neutral-900 hover:border-neutral-800 transition-all text-xs font-bold text-neutral-300 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={googlePhoto}
+                    alt="Google Original"
+                    className="w-5 h-5 rounded-full object-cover border border-neutral-800"
+                  />
+                  <span>Restore Google Photo</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

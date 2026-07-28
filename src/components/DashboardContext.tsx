@@ -28,6 +28,8 @@ interface DashboardContextType {
   refreshData: () => Promise<void>
   formatCurrency: (amount: number) => string
   logOut: () => Promise<void>
+  userAvatar: string | null
+  userEmail: string | null
 }
 
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined)
@@ -40,6 +42,8 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [isTransactionModalOpen, setTransactionModalOpen] = useState(false)
+  const [userAvatar, setUserAvatar] = useState<string | null>(null)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     try {
@@ -51,6 +55,9 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         router.push('/login')
         return
       }
+
+      setUserEmail(user.email || null)
+      setUserAvatar(user.user_metadata?.avatar_url || null)
 
       // Fetch Profile
       const { data: profileData, error: profileError } = await supabase
@@ -117,6 +124,8 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         refreshData,
         formatCurrency,
         logOut,
+        userAvatar,
+        userEmail,
       }}
     >
       {children}

@@ -18,7 +18,7 @@ import {
 
 function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const { loading, logOut, setTransactionModalOpen } = useDashboard()
+  const { loading, logOut, setTransactionModalOpen, userAvatar, userEmail, profile } = useDashboard()
 
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -78,6 +78,33 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
         {/* Sidebar Footer */}
         <div className="space-y-4 pt-6 border-t border-neutral-900">
+          {/* User Profile Card */}
+          <Link
+            href="/dashboard/profile"
+            className="flex items-center gap-3 p-3 rounded-2xl bg-neutral-900/40 hover:bg-neutral-900 border border-neutral-900/60 hover:border-neutral-800 transition-all text-left group"
+          >
+            {userAvatar ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={userAvatar}
+                alt="Profile Avatar"
+                className="w-9 h-9 rounded-full border border-emerald-500/20 object-cover shrink-0"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-neutral-950 border border-neutral-800 flex items-center justify-center text-neutral-400 shrink-0">
+                <User className="h-4.5 w-4.5" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-bold text-neutral-200 truncate group-hover:text-emerald-400 transition-colors">
+                {profile?.full_name || 'User'}
+              </div>
+              <div className="text-[10px] text-neutral-500 truncate mt-0.5 font-medium">
+                {userEmail || 'My Account'}
+              </div>
+            </div>
+          </Link>
+
           {/* Quick Add FAB (Desktop) */}
           <button
             onClick={() => setTransactionModalOpen(true)}
@@ -99,19 +126,35 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* 2. Mobile Top Bar (Hidden on desktop) */}
-      <header className="md:hidden flex justify-between items-center px-6 py-4 bg-[#0f0f12] border-b border-neutral-900 sticky top-0 z-40">
+      <header className="md:hidden flex justify-between items-center px-6 py-3.5 bg-[#0f0f12] border-b border-neutral-900 sticky top-0 z-40">
         <div className="flex items-center gap-2.5">
           <Wallet className="h-5 w-5 text-emerald-400" />
           <span className="text-sm font-bold tracking-tight bg-gradient-to-r from-neutral-50 to-neutral-400 bg-clip-text text-transparent">
             StuBudget
           </span>
         </div>
-        <button
-          onClick={logOut}
-          className="p-2 rounded-lg hover:bg-neutral-900 text-neutral-400 hover:text-red-400 transition-colors"
-        >
-          <LogOut className="h-4.5 w-4.5" />
-        </button>
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard/profile" className="focus:outline-none select-none">
+            {userAvatar ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={userAvatar}
+                alt="Profile Avatar"
+                className="w-8 h-8 rounded-full border border-emerald-500/20 object-cover shrink-0"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-neutral-950 border border-neutral-800 flex items-center justify-center text-neutral-400 shrink-0">
+                <User className="h-4 w-4" />
+              </div>
+            )}
+          </Link>
+          <button
+            onClick={logOut}
+            className="p-2 rounded-xl hover:bg-neutral-900 text-neutral-400 hover:text-red-400 transition-colors"
+          >
+            <LogOut className="h-4.5 w-4.5" />
+          </button>
+        </div>
       </header>
 
       {/* 3. Main content area */}
@@ -120,7 +163,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* 4. Mobile Bottom Nav Bar (Hidden on desktop) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0f0f12]/95 border-t border-neutral-900 px-4 py-2 backdrop-blur-lg flex items-center justify-between">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0f0f12]/95 border-t border-neutral-900 px-4 pt-2.5 pb-[calc(10px+env(safe-area-inset-bottom,12px))] backdrop-blur-lg flex items-center justify-between">
         {/* Render first 3 navigation links */}
         <div className="flex items-center justify-around flex-1">
           {navItems.slice(0, 3).map((item) => {
