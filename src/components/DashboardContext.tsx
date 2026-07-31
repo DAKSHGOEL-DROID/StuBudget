@@ -59,12 +59,12 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       setUserEmail(user.email || null)
       setUserAvatar(user.user_metadata?.avatar_url || null)
 
-      // Fetch Profile
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single()
+      // Fetch Profile and Categories in parallel
+      const [{ data: profileData, error: profileError }, { data: categoryData, error: categoryError }] =
+        await Promise.all([
+          supabase.from('profiles').select('*').eq('id', user.id).single(),
+          supabase.from('categories').select('*').eq('profile_id', user.id).order('name', { ascending: true }),
+        ])
 
       if (profileError || !profileData) {
         router.push('/onboarding')
@@ -72,13 +72,6 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       }
 
       setProfile(profileData)
-
-      // Fetch Categories
-      const { data: categoryData, error: categoryError } = await supabase
-        .from('categories')
-        .select('*')
-        .eq('profile_id', user.id)
-        .order('name', { ascending: true })
 
       if (!categoryError) {
         setCategories(categoryData || [])

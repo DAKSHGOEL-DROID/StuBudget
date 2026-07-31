@@ -45,28 +45,42 @@ export default function BudgetsPage() {
     if (!profile) return
     setLoading(true)
     try {
-      // 1. Fetch budgets
-      const { data: budgetsData, error: budgetsError } = await supabase
-        .from('budgets')
-        .select('*')
-        .eq('profile_id', profile.id)
-
-      if (!budgetsError) {
-        setBudgets(budgetsData || [])
-      }
-
-      // 2. Fetch current month's transaction spent
       const now = new Date()
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
       const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
 
-      const { data: txsData, error: txsError } = await supabase
-        .from('transactions')
-        .select('amount, category_id')
-        .eq('profile_id', profile.id)
-        .eq('type', 'expense')
-        .gte('date', startOfMonth)
-        .lte('date', endOfMonth)
+      const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0]
+      const endOfPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0]
+
+      // Execute all 3 queries in parallel
+      const [
+        { data: budgetsData, error: budgetsError },
+        { data: txsData, error: txsError },
+        { data: prevTxsData, error: prevTxsError },
+      ] = await Promise.all([
+        supabase
+          .from('budgets')
+          .select('*')
+          .eq('profile_id', profile.id),
+        supabase
+          .from('transactions')
+          .select('amount, category_id')
+          .eq('profile_id', profile.id)
+          .eq('type', 'expense')
+          .gte('date', startOfMonth)
+          .lte('date', endOfMonth),
+        supabase
+          .from('transactions')
+          .select('amount, category_id')
+          .eq('profile_id', profile.id)
+          .eq('type', 'expense')
+          .gte('date', startOfPrevMonth)
+          .lte('date', endOfPrevMonth),
+      ])
+
+      if (!budgetsError) {
+        setBudgets(budgetsData || [])
+      }
 
       if (!txsError && txsData) {
         const spentMap: Record<string, number> = {}
@@ -77,18 +91,6 @@ export default function BudgetsPage() {
         })
         setSpentData(spentMap)
       }
-
-      // 3. Fetch previous month's transaction spent (for rollover calculations)
-      const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0]
-      const endOfPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0]
-
-      const { data: prevTxsData, error: prevTxsError } = await supabase
-        .from('transactions')
-        .select('amount, category_id')
-        .eq('profile_id', profile.id)
-        .eq('type', 'expense')
-        .gte('date', startOfPrevMonth)
-        .lte('date', endOfPrevMonth)
 
       if (!prevTxsError && prevTxsData) {
         const prevSpentMap: Record<string, number> = {}

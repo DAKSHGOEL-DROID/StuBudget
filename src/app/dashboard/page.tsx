@@ -86,8 +86,18 @@ export default function DashboardPage() {
         .lte('next_due_date', todayStr)
 
       if (rules && rules.length > 0) {
+        const txsToInsert: Array<{
+          profile_id: string
+          category_id: string | null
+          amount: number
+          type: string
+          note: string
+          date: string
+          is_recurring: boolean
+        }> = []
+        const ruleUpdates: Array<PromiseLike<unknown>> = []
+
         for (const rule of rules) {
-          const txsToInsert = []
           const nextDue = new Date(rule.next_due_date)
           const todayDate = new Date(todayStr)
 
@@ -112,16 +122,19 @@ export default function DashboardPage() {
             }
           }
 
-          if (txsToInsert.length > 0) {
-            // Post the transaction entries
-            await supabase.from('transactions').insert(txsToInsert)
-          }
+          ruleUpdates.push(
+            supabase
+              .from('recurring_rules')
+              .update({ next_due_date: nextDue.toISOString().split('T')[0] })
+              .eq('id', rule.id)
+          )
+        }
 
-          // Advance next due date in rule
-          await supabase
-            .from('recurring_rules')
-            .update({ next_due_date: nextDue.toISOString().split('T')[0] })
-            .eq('id', rule.id)
+        if (txsToInsert.length > 0) {
+          await supabase.from('transactions').insert(txsToInsert)
+        }
+        if (ruleUpdates.length > 0) {
+          await Promise.all(ruleUpdates)
         }
       }
     } catch (e) {
@@ -138,64 +151,74 @@ export default function DashboardPage() {
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
       const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
 
-      // Fetch this month's transactions
-      const { data: txs, error: txsError } = await supabase
-        .from('transactions')
-        .select('*, categories(*)')
-        .eq('profile_id', profile.id)
-        .gte('date', startOfMonth)
-        .lte('date', endOfMonth)
-        .order('date', { ascending: false })
+      const fourteenDaysLater = new Date()
+      fourteenDaysLater.setDate(now.getDate() + 14)
+      const fourteenDaysLaterStr = fourteenDaysLater.toISOString().split('T')[0]
+
+      const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0]
+      const endOfPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0]
+
+      const fourMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1)
+      const fourMonthsAgoStart = fourMonthsAgo.toISOString().split('T')[0]
+
+      // Execute all dashboard queries in parallel
+      const [
+        { data: txs, error: txsError },
+        { data: upcoming, error: upcomingError },
+        { data: activeGoals, error: goalsError },
+        { data: budgets },
+        { data: prevTxs, error: prevTxsError },
+        { data: trendTxs },
+      ] = await Promise.all([
+        supabase
+          .from('transactions')
+          .select('*, categories(*)')
+          .eq('profile_id', profile.id)
+          .gte('date', startOfMonth)
+          .lte('date', endOfMonth)
+          .order('date', { ascending: false }),
+        supabase
+          .from('recurring_rules')
+          .select('*, categories(*)')
+          .eq('profile_id', profile.id)
+          .gte('next_due_date', now.toISOString().split('T')[0])
+          .lte('next_due_date', fourteenDaysLaterStr)
+          .order('next_due_date', { ascending: true }),
+        supabase
+          .from('savings_goals')
+          .select('*')
+          .eq('profile_id', profile.id)
+          .order('target_date', { ascending: true }),
+        supabase
+          .from('budgets')
+          .select('*, categories(*)')
+          .eq('profile_id', profile.id),
+        supabase
+          .from('transactions')
+          .select('amount, category_id')
+          .eq('profile_id', profile.id)
+          .eq('type', 'expense')
+          .gte('date', startOfPrevMonth)
+          .lte('date', endOfPrevMonth),
+        supabase
+          .from('transactions')
+          .select('amount, type, date')
+          .eq('profile_id', profile.id)
+          .gte('date', fourMonthsAgoStart)
+          .lte('date', endOfMonth),
+      ])
 
       if (!txsError) {
         setTransactions(txs || [])
       }
 
-      // Fetch upcoming rules (next 14 days)
-      const fourteenDaysLater = new Date()
-      fourteenDaysLater.setDate(now.getDate() + 14)
-      const fourteenDaysLaterStr = fourteenDaysLater.toISOString().split('T')[0]
-
-      const { data: upcoming, error: upcomingError } = await supabase
-        .from('recurring_rules')
-        .select('*, categories(*)')
-        .eq('profile_id', profile.id)
-        .gte('next_due_date', now.toISOString().split('T')[0])
-        .lte('next_due_date', fourteenDaysLaterStr)
-        .order('next_due_date', { ascending: true })
-
       if (!upcomingError) {
         setUpcomingBills(upcoming || [])
       }
 
-      // Fetch goals
-      const { data: activeGoals, error: goalsError } = await supabase
-        .from('savings_goals')
-        .select('*')
-        .eq('profile_id', profile.id)
-        .order('target_date', { ascending: true })
-
       if (!goalsError) {
         setGoals(activeGoals || [])
       }
-
-      // Fetch budgets and calculate overspent categories (incorporating rollover)
-      const { data: budgets } = await supabase
-        .from('budgets')
-        .select('*, categories(*)')
-        .eq('profile_id', profile.id)
-
-      // Fetch previous month's transaction spent (for rollover calculations)
-      const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0]
-      const endOfPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0]
-
-      const { data: prevTxs, error: prevTxsError } = await supabase
-        .from('transactions')
-        .select('amount, category_id')
-        .eq('profile_id', profile.id)
-        .eq('type', 'expense')
-        .gte('date', startOfPrevMonth)
-        .lte('date', endOfPrevMonth)
 
       const prevSpentMap: Record<string, number> = {}
       if (!prevTxsError && prevTxs) {
@@ -230,32 +253,33 @@ export default function DashboardPage() {
         setOverspentCategories(overspent)
       }
 
-      // Generate 4-month historical trend
+      // Aggregate 4-month trend in-memory
+      const trendMap: Record<string, { exp: number; inc: number }> = {}
+      if (trendTxs) {
+        trendTxs.forEach((t) => {
+          const monthKey = t.date.slice(0, 7)
+          if (!trendMap[monthKey]) {
+            trendMap[monthKey] = { exp: 0, inc: 0 }
+          }
+          if (t.type === 'expense') {
+            trendMap[monthKey].exp += Number(t.amount)
+          } else {
+            trendMap[monthKey].inc += Number(t.amount)
+          }
+        })
+      }
+
       const trendData = []
       for (let i = 3; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
         const monthLabel = d.toLocaleString('default', { month: 'short' })
-        const start = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]
-        const end = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split('T')[0]
-
-        const { data: hist } = await supabase
-          .from('transactions')
-          .select('amount, type')
-          .eq('profile_id', profile.id)
-          .gte('date', start)
-          .lte('date', end)
-
-        let expSum = 0
-        let incSum = 0
-        hist?.forEach((h) => {
-          if (h.type === 'expense') expSum += Number(h.amount)
-          else incSum += Number(h.amount)
-        })
+        const monthKey = d.toISOString().split('T')[0].slice(0, 7)
+        const sums = trendMap[monthKey] || { exp: 0, inc: 0 }
 
         trendData.push({
           name: monthLabel,
-          Spent: expSum,
-          Income: incSum,
+          Spent: sums.exp,
+          Income: sums.inc,
         })
       }
       setMonthlyTrend(trendData)

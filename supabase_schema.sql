@@ -169,3 +169,13 @@ create policy "Users can update own recurring rules" on public.recurring_rules
 
 create policy "Users can delete own recurring rules" on public.recurring_rules
   for delete using (auth.uid() = profile_id);
+
+-- ========================================================
+-- Performance Indexes
+-- ========================================================
+create index if not exists idx_transactions_profile_date on public.transactions(profile_id, date desc);
+create index if not exists idx_transactions_profile_type_date on public.transactions(profile_id, type, date);
+create index if not exists idx_recurring_rules_profile_due on public.recurring_rules(profile_id, next_due_date);
+create index if not exists idx_budgets_profile_category on public.budgets(profile_id, category_id);
+create index if not exists idx_categories_profile on public.categories(profile_id);
+
