@@ -10,6 +10,8 @@ import {
   Calendar,
   AlertTriangle,
   ArrowRight,
+  BarChart2,
+  Activity,
 } from 'lucide-react'
 import {
   ResponsiveContainer,
@@ -18,6 +20,8 @@ import {
   Cell,
   AreaChart,
   Area,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   Tooltip,
@@ -71,6 +75,8 @@ export default function DashboardPage() {
   const [upcomingBills, setUpcomingBills] = useState<RecurringRule[]>([])
   const [goals, setGoals] = useState<Goal[]>([])
   const [overspentCategories, setOverspentCategories] = useState<string[]>([])
+  const [chartType, setChartType] = useState<'area' | 'bar'>('area')
+  const [trendMetric, setTrendMetric] = useState<'both' | 'spent' | 'income'>('both')
 
   const processRecurringTransactions = useCallback(async () => {
     try {
@@ -503,28 +509,98 @@ export default function DashboardPage() {
 
       {/* Main Charts & Widgets Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Trend Area Chart */}
+        {/* Trend Area / Bar Chart */}
         <div className="bg-[#18181b]/20 border border-neutral-900 p-6 rounded-3xl lg:col-span-2 space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-sm font-bold text-neutral-200">Spending Trends</h2>
-            <span className="text-[10px] text-neutral-500 font-semibold uppercase">Last 4 Months</span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-neutral-200">Spending Trends</h2>
+              <span className="text-[10px] text-neutral-500 font-semibold uppercase">Last 4 Months</span>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Metric filter toggle */}
+              <div className="flex items-center bg-neutral-900 border border-neutral-800 p-0.5 rounded-xl text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => setTrendMetric('both')}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                    trendMetric === 'both'
+                      ? 'bg-neutral-800 text-neutral-100 shadow-xs'
+                      : 'text-neutral-400 hover:text-neutral-200'
+                  }`}
+                >
+                  Both
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTrendMetric('spent')}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                    trendMetric === 'spent'
+                      ? 'bg-neutral-800 text-red-400 shadow-xs'
+                      : 'text-neutral-400 hover:text-neutral-200'
+                  }`}
+                >
+                  Spent
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTrendMetric('income')}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                    trendMetric === 'income'
+                      ? 'bg-neutral-800 text-emerald-400 shadow-xs'
+                      : 'text-neutral-400 hover:text-neutral-200'
+                  }`}
+                >
+                  Income
+                </button>
+              </div>
+
+              {/* Chart type toggle */}
+              <div className="flex items-center bg-neutral-900 border border-neutral-800 p-0.5 rounded-xl text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => setChartType('area')}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all flex items-center gap-1 ${
+                    chartType === 'area'
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-xs'
+                      : 'text-neutral-400 hover:text-neutral-200'
+                  }`}
+                >
+                  <Activity className="h-3 w-3" />
+                  <span>Area</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChartType('bar')}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all flex items-center gap-1 ${
+                    chartType === 'bar'
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-xs'
+                      : 'text-neutral-400 hover:text-neutral-200'
+                  }`}
+                >
+                  <BarChart2 className="h-3 w-3" />
+                  <span>Bar</span>
+                </button>
+              </div>
+            </div>
           </div>
+
           <div className="h-64 w-full">
             {monthlyTrend.length === 0 ? (
               <div className="h-full flex items-center justify-center text-xs text-neutral-500">
                 No historical records available.
               </div>
-            ) : (
+            ) : chartType === 'area' ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={monthlyTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorSpent" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2}/>
-                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <XAxis
@@ -549,10 +625,50 @@ export default function DashboardPage() {
                       fontSize: '11px',
                       color: '#f4f4f5',
                     }}
+                    formatter={(val) => [formatCurrency(Number(val)), '']}
                   />
-                  <Area type="monotone" dataKey="Spent" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorSpent)" />
-                  <Area type="monotone" dataKey="Income" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorIncome)" />
+                  {(trendMetric === 'both' || trendMetric === 'spent') && (
+                    <Area type="monotone" dataKey="Spent" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorSpent)" />
+                  )}
+                  {(trendMetric === 'both' || trendMetric === 'income') && (
+                    <Area type="monotone" dataKey="Income" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorIncome)" />
+                  )}
                 </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <XAxis
+                    dataKey="name"
+                    stroke="#52525b"
+                    fontSize={10}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    stroke="#52525b"
+                    fontSize={10}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v) => `${profile?.base_currency} ${v}`}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#18181b',
+                      borderColor: '#27272a',
+                      borderRadius: '12px',
+                      fontSize: '11px',
+                      color: '#f4f4f5',
+                    }}
+                    formatter={(val) => [formatCurrency(Number(val)), '']}
+                  />
+                  {(trendMetric === 'both' || trendMetric === 'spent') && (
+                    <Bar dataKey="Spent" fill="#ef4444" radius={[6, 6, 0, 0]} maxBarSize={40} />
+                  )}
+                  {(trendMetric === 'both' || trendMetric === 'income') && (
+                    <Bar dataKey="Income" fill="#10b981" radius={[6, 6, 0, 0]} maxBarSize={40} />
+                  )}
+                </BarChart>
               </ResponsiveContainer>
             )}
           </div>
